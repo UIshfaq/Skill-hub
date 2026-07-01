@@ -1,0 +1,47 @@
+name: CI/CD
+
+on:
+  push:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recréer le .env depuis .env.dist
+        run: cp .env.dist .env
+      - name: Lint dans Docker
+        run: docker compose run --rm --no-deps app npm run lint
+      - name: Tests dans Docker
+        run: docker compose run --rm --no-deps app npm test 2>&1 | tee test-report.txt
+      - name: Publier le rapport de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: test-report.txt
+
+  build:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag = sha court du commit
+        id: vars
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build image Docker
+        run: docker build --target runner -t skillhub:${{ steps.vars.outputs.sha }} .
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Déploiement simulé
+        run: chmod +x deploy.sh && ./deploy.sh
+      - name: Publier le deploy.log
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: deploy.log
